@@ -45,12 +45,14 @@
       return list;
     }
   
-    function createTodoItem(name) {
+    function createTodoItemElement(todoItem, { onDone, onDelete }) {
       let item = document.createElement("li");
       // кнопки помещаем в элемент, который красиво покажет их в одной группе
       let buttonGroup = document.createElement("div");
       let doneButton = document.createElement("button");
       let deleteButton = document.createElement("button");
+
+      const doneClass = 'list-group-item-success';
   
       // устанавливаем стили для элемента списка, а также для размещения кнопок в его правой части с помощью flex
       item.classList.add(
@@ -59,13 +61,26 @@
         "justify-content-between",
         "align-items-center"
       );
-      item.textContent = name;
+      item.textContent = todoItem.name;
+
+      if (todoItem.done) {
+        item.classList.add(doneClass);
+      }
   
       buttonGroup.classList.add("btn-group", "btn-group-sm");
       doneButton.classList.add("btn", "btn-success");
       doneButton.textContent = "Готово";
       deleteButton.classList.add("btn", "btn-danger");
       deleteButton.textContent = "Удалить";
+
+      // добавляем обработчики на кнопки
+      doneButton.addEventListener("click", function () {
+        onDone({ todoItem, element: item });
+        item.classList.toggle(doneClass, todoItem.done);
+      });
+      deleteButton.addEventListener("click", function () {
+        onDelete({ todoItem, element: item });
+      });
   
       // вкладываем кнопку в отдельный элемент, чтобы они объединились в один блок
       buttonGroup.append(doneButton);
@@ -73,55 +88,50 @@
       item.append(buttonGroup);
   
       // приложению нужен доступ к самому элементу и кнопкам, чтобы обрабатывать событие нажатия
-      return {
-        item,
-        doneButton,
-        deleteButton,
-      };
+      return item;
     }
   
     // главная функция где будет обрабатываться добавление списки и тд**
-    function createTodoApp(container, title = "Список дел", listName = "") {
+    async function createTodoApp(container, title = "Список дел", owner) {
       let todoAppTitle = createAppTitle(title);
       let todoItemForm = createTodoItemForm();
       let todoList = createTodoList();
+      const handlers = {
+        onDone({todoItem}) {
+          todoItem.done = !todoItem.done;
+          fetch(`http://localhost:3000/api/todos/${todoItem.id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ done: todoItem.done }),
+            headers: {
+              'Content-Type' : 'application/json',
+            }
+          });
+        },
+        onDelete({ todoItem, element }) {
+          if (!confirm('Вы уверены?')) {
+            return;
+          }
+          element.remove();
+          fetch(`http://localhost:3000/api/todos/${todoItem.id}`, {
+            method: 'DELETE',
+          });
+        },
+      };
   
       container.append(todoAppTitle);
       container.append(todoItemForm.form);
       container.append(todoList);
-  
-      // данный метод вернет входящую строку в виде данных
-      function jsonToData(data) {
-        return JSON.parse(data);
-      };
-  
-      // данный метод вернет данные из localstorage
-      function getCartData() {
-        return localStorage.getItem(listName);
-      };
-  
-      // данный метод вернет входящие данные в виде строки
-      function dataToJson(data) {
-        return JSON.stringify(data);
-      };
-  
-      //данный метод запишет наши данные в localstorage
-      function setCartData(data) {
-        localStorage.setItem(listName, data);
-      };
   
       // функция удаление элемента обьекта в массиве
       function todoRemoveObj(array, item) {
         let index = array.indexOf(item)
         if (index !== -1) {
           array.splice(index, 1);
-          //  удаляет в localstorage конкретную элемент в массив при срабатывание функции
-          setCartData(dataToJson(array));
         }
       }
   
       // этот переменная пустой массив нужен для того чтобы добавить обьект todoitem внутри массив или если есть элементы внутри массива то вернет первое значение
-      let todosArray = jsonToData(getCartData()) || [];
+      let todosArray = [];
   
       // Функция для отображения списка дел на экране
       function renderTodoList() {
@@ -154,48 +164,41 @@
   
       // Вызываем функцию для отображения списка дел при запуске приложения
       renderTodoList();
+
+      // отправляем запрос на список всех дел
+      const response = await fetch(`http://localhost:3000/api/todos?owner=${owner}`);
+      const todoItemList = await response.json();
+
+      todoItemList.forEach(todoItem => {
+        const todoItemElement = createTodoItemElement(todoItem, handlers);
+        todoList.append(todoItemElement);
+      });
   
       // браузер создает событие submit на форме по нажатию на Enter или на кнопку создания дела
-      todoItemForm.form.addEventListener("submit", function (e) {
+      todoItemForm.form.addEventListener("submit", async function (e) {
         // этот браузер предотвращает стандартное действие браузера
         // в данном случае мы не хотим, чтобы при нажатии на кнопку страница перезагружалась
         e.preventDefault();
   
         // игнорируем создание элемента, если пользователь ничего не ввел в поле
-        if (!todoItemForm.input.value) {
+        if (!todoItemForm.input.value.trim()) {
           return;
         }
-  
-        let todoItem = createTodoItem(todoItemForm.input.value);
-  
-        function todoDoneObj(array) {
-          // Проверяем, содержит ли элемент класс "list-group-item-success"
-          // Если содержит, устанавливаем значение свойства "done" объекта "obj" в true
-          // Если не содержит, устанавливаем значение свойства "done" объекта "obj" в false
-          if (todoItem.item.classList.contains("list-group-item-success")) {
-            obj.done = true;
-            //  поменяет на true в массиве где внутри обьект и ключ done в localstorage при срабатывание функции
-            setCartData(dataToJson(array));
-          } else {
-            obj.done = false;
-            //  поменяет на false в массиве где внутри обьект и ключ done в localstorage при срабатывание функции
-            setCartData(dataToJson(array));
-          };
-        };
-  
-        // добавляем обработчики на кнопки
-        todoItem.doneButton.addEventListener("click", function () {
-          todoItem.item.classList.toggle("list-group-item-success");
-          // вызываем функции для изменение в обьекте done при клике
-          todoDoneObj(todosArray);
-        });
-        todoItem.deleteButton.addEventListener("click", function () {
-          if (confirm("Вы уверены?")) {
-            todoItem.item.remove();
-            // удаляет элемент обьект в массиве
-            todoRemoveObj(todosArray, obj);
+
+        const response = await fetch('http://localhost:3000/api/todos', {
+          method: 'POST',
+          body: JSON.stringify({
+            name: todoItemForm.input.value.trim(),
+            owner,
+          }),
+          headers: {
+            'Content-Type' : 'application/json',
           }
         });
+
+        const todoItem = await response.json();
+  
+        const todoItemElement = createTodoItemElement(todoItem, handlers);
   
         // функция для добавление новый индификатор для обьекта в массиве
         function addObjId(array) {
@@ -217,13 +220,11 @@
         todosArray.push(obj);
   
         // создаем и добавляем в список новое дело с названием из поля для ввода
-        todoList.append(todoItem.item);
+        todoList.append(todoItemElement);
         // обнуляем значение в поле, чтобы не пришлось стирать его вручную
         todoItemForm.input.value = "";
         // вернем значение disabled button
         todoItemForm.button.disabled = true;
-        //записываем массив в localstorage
-        setCartData(dataToJson(todosArray));
       });
     }
     window.createTodoApp = createTodoApp;
